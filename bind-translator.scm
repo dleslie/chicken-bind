@@ -512,7 +512,7 @@
   (let loop ([ts ts] [i 0] [items '()])
     (match ts
       [('close-curly) #f]
-      [_ (let-values ([(sym val more) (parse-enum-item ts i items)])
+      [_ (let-values ([(sym val more) (parse-enum-item ename ts i items)])
 	   (let ([items (alist-cons sym val items)]
 		 [i (add1 val)] )
 	     (match more
@@ -520,18 +520,22 @@
 	       [('comma . more) (loop more i items)]
 	       [_ (parsing-error "syntax error in enum form" more)] ) ) ) ] ) ) )
 
-(define (parse-enum-item ts i items)
+(define (parse-enum-item ename ts i items)
+  (define (make-enum-name name) 
+    (string->symbol (if ename 
+			(string-append ename "-" name) 
+			(string->symbol name))))
   (match ts
     [(('id name) ('op "=") ('id name2) . more)
      (cond ((assq (string->symbol name2) items)
-	    => (lambda (a) (values (string->symbol name) (cdr a) more)))
+	    => (lambda (a) (values (make-enum-name name) (cdr a) more)))
 	   (else (parsing-error "undefined enum value" name2)) ) ]
     [(('id name) ('op "=") ('num n) . more)
      (if (integer? n)
-	 (values (string->symbol name) n more) 
+	 (values (make-enum-name name) n more) 
 	 (parsing-error "inexact enum value" n name) ) ]
     [(('id name) . more)
-     (values (string->symbol name) i more) ] 
+     (values (make-enum-name name) i more) ] 
     [_ (parsing-error "invalid enum syntax" ts)] ) )
 
 (define (parse-struct-def m sname ab ts)
@@ -708,6 +712,15 @@
 	      [() #f]
 	      [_ (parsing-error "unexpected tokens" more)] ) ) ]
 	 [_ (parsing-error "bad static member prototype syntax" more)] ) ) ]
+    [('enum ('scope more))
+     (parse-enum-def name (subst-macros more)) ]
+    [('enum ('id enum-name) ('scope more))
+     (parse-enum-def (string-append name "-" enum-name) (subst-macros more)) ]
+    [((or 'union 'struct) ('id struct-name) ('scope . more))
+     (parse-struct-def (car ts) (string-append name "::" struct-name) #f (subst-macros more)) ]
+    [((or 'union 'struct) ('scope . more))
+     (parse-struct-def (car ts) name #t (subst-macros more)) ]
+    [((or 'union 'struct) ('id name)) #f]
     [_ (let-values ([(rtype more) (parse-type ts #f #t discard)])
 	 (match more
 	   [(('id str) 'open-paren 'void 'close-paren . more)
